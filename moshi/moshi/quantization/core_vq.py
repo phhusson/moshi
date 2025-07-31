@@ -16,6 +16,7 @@ import torch
 from torch import nn
 from torch import distributed
 import torch.nn.functional as F
+import torch.compiler
 
 
 class _CodebookForwardResult(tp.NamedTuple):
@@ -74,6 +75,7 @@ def _average_tensors(tensors: tp.Sequence[torch.Tensor]) -> None:
         tensor.data /= world_size
 
 
+@torch.compiler.disable
 def _run_kmeans(samples: torch.Tensor, num_clusters: int, num_iters: int = 50) -> tp.Tuple[torch.Tensor, torch.Tensor]:
     # Kmeans algorithm used to initialize the codebooks.
     dim = samples.shape[-1]
@@ -176,6 +178,7 @@ class EuclideanCodebook(nn.Module):
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     @property
+    @torch.compiler.disable
     def embedding(self) -> torch.Tensor:
         if self._embedding is None:
             embedding = (

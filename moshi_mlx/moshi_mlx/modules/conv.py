@@ -5,6 +5,7 @@
 import math
 import mlx.core as mx
 import mlx.nn as nn
+from .eval import eval_mx_arrays
 
 
 class Conv1d(nn.Module):
@@ -35,6 +36,7 @@ class Conv1d(nn.Module):
         self._stride = stride
         self._dilation = dilation
 
+    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         # MLX uses NLC whereas pytorch/candle use NCL
         y = mx.conv1d(
@@ -89,6 +91,7 @@ class ConvTranspose1d(nn.Module):
             self._expanded_weight = self.weight
             self._expanded_groups = groups
 
+    @eval_mx_arrays
     def update_in_place(self):
         groups = self._groups
         in_channels = self._in_channels
@@ -110,7 +113,10 @@ class ConvTranspose1d(nn.Module):
         self.update_in_place()
         return self
 
+    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
+        s = self._expanded_weight.shape
+        print("heya transpose conv", s)
         y = mx.conv_transpose1d(
             xs.swapaxes(-1, -2),
             self._expanded_weight,
@@ -146,6 +152,7 @@ class NormConv1d(nn.Module):
             bias=bias
         )
 
+    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         return self.conv(xs)
 
@@ -171,10 +178,12 @@ class NormConvTranspose1d(nn.Module):
             bias=bias
         )
 
+    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         return self.convtr(xs)
 
 
+@eval_mx_arrays
 def get_extra_padding_for_conv1d(
     xs: mx.array,
     ksize: int,
@@ -187,6 +196,7 @@ def get_extra_padding_for_conv1d(
     return max(0, ideal_len - len_)
 
 
+@eval_mx_arrays
 def unpad1d(xs: mx.array, unpad_l: int, unpad_r: int) -> mx.array:
     left = unpad_l
     right = xs.shape[-1] - unpad_r
@@ -228,6 +238,7 @@ class StreamableConv1d(nn.Module):
         self._prev_xs = None
         self._left_pad_applied = False
 
+    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         ksize = self._ksize
         ksize = (ksize - 1) * self.conv.conv._dilation + 1
@@ -249,6 +260,7 @@ class StreamableConv1d(nn.Module):
         pd = mx.pad(xs, pad_width=widths, mode=self._pad_mode)
         return self.conv(pd)
 
+    @eval_mx_arrays
     def step(self, xs: mx.array) -> mx.array:
         b, _, len_ = xs.shape
         if len_ == 0:
@@ -308,6 +320,7 @@ class StreamableConvTranspose1d(nn.Module):
     def reset_state(self):
         self._prev_ys = None
 
+    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         stride = self.convtr.convtr._stride
         padding_total = max(self._ksize - stride, 0)
@@ -320,6 +333,7 @@ class StreamableConvTranspose1d(nn.Module):
             unpad_l = padding_total - unpad_r
         return unpad1d(xs, unpad_l=unpad_l, unpad_r=unpad_r)
 
+    @eval_mx_arrays
     def step(self, xs: mx.array) -> mx.array:
         b, _, len_ = xs.shape
         if len_ == 0:
@@ -361,9 +375,11 @@ class ConvDownsample1d(nn.Module):
     def reset_state(self):
         self.conv.reset_state()
 
+    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         return self.conv(xs)
 
+    @eval_mx_arrays
     def step(self, xs: mx.array) -> mx.array:
         return self.conv.step(xs)
 
@@ -388,10 +404,12 @@ class ConvTrUpsample1d(nn.Module):
     def reset_state(self):
         self.convtr.reset_state()
 
+    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         xs = self.convtr(xs)
         return xs
 
+    @eval_mx_arrays
     def step(self, xs: mx.array) -> mx.array:
         xs = self.convtr.step(xs)
         return xs

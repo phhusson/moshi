@@ -206,6 +206,7 @@ class CUDAGraphed:
         self._graph: cuda.CUDAGraph | None = None
         self._output: tuple | None = None
         self._args: tuple | None = None
+        self._compiled = None
 
     def reset(self, warmup_steps: int = 0) -> None:
         """Reset the state, meaning the next call we get CUDA Graphed again. Useful if some
@@ -214,11 +215,16 @@ class CUDAGraphed:
         self._graph = None
         self._output = None
         self._args = None
+        self._compiled = None
 
     def __call__(self, *args, **kwargs) -> tp.Any:
         if kwargs:
             raise RuntimeError("Named arguments not supported for now.")
         if self.disable or not _is_cuda_graph_enabled() or in_cuda_graph():
+            if False:
+                if not self._compiled:
+                    self._compiled = torch.compile(self.func)
+                return self._compiled(*args, **kwargs)
             return self.func(*args, **kwargs)
 
         def _clone_tensors(args: tuple) -> tuple:

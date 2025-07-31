@@ -63,6 +63,7 @@ class RMSNorm(nn.Module):
             torch.full((1, 1, dim), 1.0, requires_grad=True, device=device, dtype=dtype)
         )
 
+    @torch.compiler.disable
     def forward(self, x: torch.Tensor):
         return _rms_norm(x, self.alpha, self.dtype, self.eps)
 
@@ -722,6 +723,16 @@ class StreamingTransformerLayer(StreamingModule[_LayerState]):
         device = next(iter(self.parameters())).device
         return _LayerState(batch_size, device, offset_cpu=0)
 
+    @torch.compiler.disable
+    def norm2_(self, x):
+        return self.norm2(x)
+    @torch.compiler.disable
+    def norm1_(self, x):
+        return self.norm1(x)
+    @torch.compiler.disable
+    def norm_cross_(self, x):
+        return self.norm_cross(x)
+
     # feed forward block
     def _ff_block(self, x: torch.Tensor) -> torch.Tensor:
         state = self._streaming_state
@@ -729,7 +740,7 @@ class StreamingTransformerLayer(StreamingModule[_LayerState]):
         if state is not None:
             offset = state.offset_cpu
         x_orig = x
-        x = self.norm2(x)
+        x = self.norm2_(x)
         if self.gating is None:
             assert self.linear1 is not None
             assert self.linear2 is not None
@@ -746,7 +757,7 @@ class StreamingTransformerLayer(StreamingModule[_LayerState]):
         if self.skip_self_attn:
             return x
         x_orig = x
-        x = self.norm1(x)
+        x = self.norm1_(x)
         update = self.self_attn(x, x, x)
         return x_orig.to(update) + self.layer_scale_1(update)
 
@@ -754,15 +765,15 @@ class StreamingTransformerLayer(StreamingModule[_LayerState]):
                                cross_attention_src: torch.Tensor) -> torch.Tensor:
         assert self.cross_attention is not None
         x_orig = x
-        x = self.norm_cross(x)
+        x = self.norm_cross_(x)
         # queries are from src, keys and values from cross_attention_src.
         update = self.cross_attention(x, cross_attention_src, cross_attention_src)
         return x_orig + self.layer_scale_cross(update)
 
     def forward(self, x: torch.Tensor, cross_attention_src: torch.Tensor | None = None):
         with ExitStack() as stack:
-            if x.device.type != 'cuda':
-                stack.enter_context(no_compile())
+            #if x.device.type != 'cuda':
+            #    stack.enter_context(no_compile())
             x = self._sa_block(x)
             if self.cross_attention is not None:
                 assert cross_attention_src is not None

@@ -99,13 +99,17 @@ class ScaledEmbedding(nn.Embedding):
             self.out1 = nn.Linear(low_rank or embedding_dim, embedding_dim, bias=False)
             self.out2 = nn.Linear(low_rank or embedding_dim, embedding_dim, bias=False)
 
+    @torch.compiler.disable
     def forward(self, input, *args, **kwargs):
         is_zero = input == self.zero_idx
         zero = torch.zeros(1, dtype=input.dtype, device=input.device)
         input = input.clamp(min=0)
         if self.demux_second_stream:
-            left = input % self.num_embeddings
-            right = input // self.num_embeddings
+            a = self.num_embeddings
+            left = input % a
+            right = input // a
+            #left = left.int()
+            #right = right.int()
             # Right is itself between [-1, ..., card - 1], with -1 being the zero value.
             right = right - 1
             left = super().forward(left, *args, **kwargs)

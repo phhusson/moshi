@@ -15,6 +15,7 @@ from ..modules import (
     ConvDownsample1d,
     ConvTrUpsample1d,
 )
+from ..modules.eval import eval_mx_arrays
 import math
 
 import mlx.core as mx
@@ -133,6 +134,7 @@ class Mimi(nn.Module):
         for c in self.encoder_cache:
             c.reset()
 
+    @eval_mx_arrays
     def encode(self, xs: mx.array) -> mx.array:
         self.encoder.reset_state()
         for c in self.encoder_cache:
@@ -142,6 +144,7 @@ class Mimi(nn.Module):
         xs = self.downsample(xs)
         return self.quantizer.encode(xs)
 
+    @eval_mx_arrays
     def decode(self, xs: mx.array) -> mx.array:
         self.decoder.reset_state()
         for c in self.decoder_cache:
@@ -151,6 +154,7 @@ class Mimi(nn.Module):
         xs = self.decoder_transformer(xs, cache=self.decoder_cache)[0]
         return self.decoder(xs)
 
+    @eval_mx_arrays
     def encode_step(self, xs: mx.array) -> mx.array:
         xs = self.encoder.step(xs)
         xs = self.encoder_transformer(xs, cache=self.encoder_cache)[0]
@@ -158,6 +162,7 @@ class Mimi(nn.Module):
         xs = self.quantizer.encode(xs)
         return xs
 
+    @eval_mx_arrays
     def decode_step(self, xs: mx.array) -> mx.array:
         xs = self.quantizer.decode(xs)
         xs = self.upsample.step(xs)
@@ -165,6 +170,7 @@ class Mimi(nn.Module):
         xs = self.decoder.step(xs)
         return xs
 
+    @eval_mx_arrays
     def warmup(self):
         pcm = mx.zeros((1, 1, 1920 * 4))
         codes = self.encode(pcm)
