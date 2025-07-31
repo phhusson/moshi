@@ -9,3 +9,4 @@ from .quantization import SplitResidualVectorQuantizer, EuclideanCodebook
 from .seanet import SeanetConfig, SeanetEncoder, SeanetDecoder
 from .kv_cache import KVCache, RotatingKVCache
 from .transformer import Transformer, TransformerConfig, ProjectedTransformer
+

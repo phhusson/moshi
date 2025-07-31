@@ -6,6 +6,7 @@ from typing import Optional
 
 import mlx.core as mx
 
+from ..modules.eval import eval_mx_arrays
 from ..modules.conditioner import ConditionTensor
 from ..models import Lm
 from ..utils import sampling
@@ -57,6 +58,7 @@ class LmGen:
         """
         return -2
 
+    @eval_mx_arrays
     def _step(
         self,
         other_audio_tokens: mx.array,
@@ -113,6 +115,7 @@ class LmGen:
         self.step_idx += 1
         return text_tokens, transformer_out
 
+    @eval_mx_arrays
     def step(
         self,
         other_audio_tokens: mx.array,
@@ -121,6 +124,7 @@ class LmGen:
     ) -> mx.array:
         return self._step(other_audio_tokens, ct, cross_attention_src)[0]
 
+    @eval_mx_arrays
     def step_with_extra_heads(
         self,
         other_audio_tokens: mx.array,
@@ -131,6 +135,7 @@ class LmGen:
         extra_heads = [mx.softmax(eh(transformer_out), axis=-1) for eh in self.model.extra_heads]
         return text, extra_heads
 
+    @eval_mx_arrays
     def last_audio_tokens(self) -> Optional[mx.array]:
         gen_idx = self.step_idx - 1 - self.max_delay
         if gen_idx < 0:

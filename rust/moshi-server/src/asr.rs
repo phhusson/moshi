@@ -6,7 +6,6 @@ use crate::AsrStreamingQuery as Query;
 use anyhow::{Context, Result};
 use axum::extract::ws;
 use candle::{DType, Device, Tensor};
-use candle_nn::VarBuilder;
 use std::collections::VecDeque;
 use tokio::time::{timeout, Duration};
 
@@ -47,10 +46,9 @@ pub struct Asr {
 impl Asr {
     pub fn new(asr: &crate::AsrConfig, config: &crate::Config, dev: &Device) -> Result<Self> {
         let dtype = dev.bf16_default_to_f32();
-        let vb_lm =
-            unsafe { VarBuilder::from_mmaped_safetensors(&[&asr.lm_model_file], dtype, dev)? };
+        tracing::info!("Loading ASR model");
         let lm =
-            moshi::lm::LmModel::new(&asr.model, moshi::nn::MaybeQuantizedVarBuilder::Real(vb_lm))?;
+            moshi::lm::load_lm_model(asr.model.clone(), &asr.lm_model_file, dtype, dev)?;
         let conditions = match lm.condition_provider() {
             None => None,
             Some(cp) => {
