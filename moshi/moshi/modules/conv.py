@@ -273,6 +273,37 @@ class StreamingConv1d(StreamingModule[_StreamingConv1dState]):
                 )
         return y
 
+    def recurrent_forward(self, x: torch.tensor, state: list[torch.tensor]):
+        if self._effective_kernel_size - self._stride == 0:
+            x = self.conv(x)
+            return x, []
+        else:
+            state = state[0]
+            assert state.shape[0] == 1 # batch size
+            assert state.shape[1] == self.conv.conv.in_channels
+            assert state.shape[2] == self._effective_kernel_size - self._stride
+            x = torch.cat([state, x], dim = -1)
+            x = self.conv(x)
+            new_state = state[:, :, -state.shape[2]:]
+            return x, [new_state]
+
+    def recurrent_n_states(self):
+        if self._effective_kernel_size - self._stride == 0:
+            return 0
+        return 1
+
+    def recurrent_init_state(self):
+        if self._effective_kernel_size - self._stride == 0:
+            return []
+        params = next(iter(self.parameters()))
+        return [torch.zeros(
+            1,
+            self.conv.conv.in_channels,
+            self._effective_kernel_size - self._stride,
+            dtype = params.dtype,
+            device = params.device)
+        ]
+
 
 @dataclass
 class _StreamingConvTr1dState(State):
