@@ -17,6 +17,8 @@ from ..modules import (
 )
 from ..modules.eval import eval_mx_arrays
 import math
+import coremltools as ct
+import numpy as np
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -126,7 +128,34 @@ class Mimi(nn.Module):
         self.encoder_cache = self.encoder_transformer.make_cache()
         self.decoder_cache = self.decoder_transformer.make_cache()
 
+        self.mlcore_encoder_model = ct.models.MLModel("/Users/phh/moshi/mimi-encoder.mlpackage", compute_units=ct.ComputeUnit.CPU_AND_NE)
+        self.mlcore_encoder_state = {}
+        for in_descr in self.mlcore_encoder_model.input_description._fd_spec:
+            if not in_descr.name.startswith("state_"):
+                continue
+            shape = in_descr.type.multiArrayType.shape
+            self.mlcore_encoder_state[in_descr.name] = np.zeros(tuple(shape))
+
+        self.mlcore_decoder_model = ct.models.MLModel("/Users/phh/moshi/mimi-decoder.mlpackage", compute_units=ct.ComputeUnit.CPU_AND_NE)
+        self.mlcore_decoder_state = {}
+        for in_descr in self.mlcore_decoder_model.input_description._fd_spec:
+            if not in_descr.name.startswith("state_"):
+                continue
+            shape = in_descr.type.multiArrayType.shape
+            self.mlcore_decoder_state[in_descr.name] = np.zeros(tuple(shape))
+
     def reset_state(self):
+        for in_descr in self.mlcore_encoder_model.input_description._fd_spec:
+            if not in_descr.name.startswith("state_"):
+                continue
+            shape = in_descr.type.multiArrayType.shape
+            self.mlcore_encoder_state[in_descr.name] = np.zeros(tuple(shape))
+        for in_descr in self.mlcore_decoder_model.input_description._fd_spec:
+            if not in_descr.name.startswith("state_"):
+                continue
+            shape = in_descr.type.multiArrayType.shape
+            self.mlcore_decoder_state[in_descr.name] = np.zeros(tuple(shape))
+
         self.encoder.reset_state()
         self.decoder.reset_state()
         for c in self.decoder_cache:
@@ -156,6 +185,21 @@ class Mimi(nn.Module):
 
     @eval_mx_arrays
     def encode_step(self, xs: mx.array) -> mx.array:
+        if True:
+            self.mlcore_encoder_state['x'] = np.array(xs)
+            ym = self.mlcore_encoder_model.predict(self.mlcore_encoder_state)
+
+            for key in self.mlcore_encoder_state:
+                if not key.startswith("state_"):
+                    continue
+
+                self.mlcore_encoder_state[key] = ym['out_'+key]
+                #print("state coreml",key, ym['out_'+key])
+            xs = ym['y']
+            xs = mx.array(xs)
+            xs = self.quantizer.encode(xs)
+            return xs
+
         xs = self.encoder.step(xs)
         xs = self.encoder_transformer(xs, cache=self.encoder_cache)[0]
         xs = self.downsample.step(xs)
@@ -164,6 +208,28 @@ class Mimi(nn.Module):
 
     @eval_mx_arrays
     def decode_step(self, xs: mx.array) -> mx.array:
+        if True:
+            #for in_descr in self.mlcore_decoder_model.input_description._fd_spec:
+            #    if not in_descr.name.startswith("state_"):
+            #        continue
+            #    shape = in_descr.type.multiArrayType.shape
+            #    self.mlcore_decoder_state[in_descr.name] = np.zeros(tuple(shape))
+            xs = self.quantizer.decode(xs)
+            #if True:
+            #    xs = self.upsample.step(xs)
+            #    xs = self.decoder_transformer(xs, cache=self.decoder_cache)[0]
+            self.mlcore_decoder_state['x'] = np.array(xs)
+            ym = self.mlcore_decoder_model.predict(self.mlcore_decoder_state)
+
+            for key in self.mlcore_decoder_state:
+                if not key.startswith("state_"):
+                    continue
+
+                self.mlcore_decoder_state[key] = ym['out_'+key]
+                #print("state coreml",key, ym['out_'+key])
+            xs = ym['y']
+            xs = mx.array(xs)
+            return xs
         xs = self.quantizer.decode(xs)
         xs = self.upsample.step(xs)
         xs = self.decoder_transformer(xs, cache=self.decoder_cache)[0]

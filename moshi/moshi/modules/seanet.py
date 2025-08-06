@@ -457,3 +457,35 @@ class SEANetDecoder(StreamingContainer):
     def forward(self, z):
         y = self.model(z)
         return y
+
+    def recurrent_n_states(self):
+        total = 0
+        for layer in self.model.children():
+            if hasattr(layer, "recurrent_n_states"):
+                total += layer.recurrent_n_states()
+        return total
+
+    def recurrent_init_state(self):
+        total = []
+        for layer in self.model.children():
+            if hasattr(layer, "recurrent_init_state"):
+                total += layer.recurrent_init_state()
+        return total
+
+
+    def recurrent_forward(self, x: torch.Tensor, state: list[torch.Tensor]):
+        i = 0
+        new_state = []
+        for layer in self.model.children():
+            if hasattr(layer, "recurrent_forward"):
+                n_states = layer.recurrent_n_states()
+                this_state = state[:n_states]
+                state = state[n_states:]
+                x, that_state = layer.recurrent_forward(x, this_state)
+                if len(that_state) != len(this_state):
+                    raise
+                new_state += that_state
+            else:
+                x = layer(x)
+
+        return x, new_state

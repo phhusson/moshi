@@ -282,10 +282,10 @@ class StreamingConv1d(StreamingModule[_StreamingConv1dState]):
             assert state.shape[0] == 1 # batch size
             assert state.shape[1] == self.conv.conv.in_channels
             assert state.shape[2] == self._effective_kernel_size - self._stride
-            x = torch.cat([state, x], dim = -1)
-            x = self.conv(x)
-            new_state = state[:, :, -state.shape[2]:]
-            return x, [new_state]
+            x = torch.cat((state, x), dim = -1)
+            y = self.conv(x)
+            new_state = x[:, :, -state.shape[2]:]
+            return y, [new_state]
 
     def recurrent_n_states(self):
         if self._effective_kernel_size - self._stride == 0:
@@ -391,6 +391,50 @@ class StreamingConvTranspose1d(StreamingModule[_StreamingConvTr1dState]):
                     state.partial)
                 y = y[..., :-PT]
         return y
+
+    def recurrent_forward(self, x: torch.tensor, state: list[torch.tensor]):
+        if self._kernel_size - self._stride == 0:
+            x = self.convtr(x)
+            return x, []
+        else:
+            state = state[0]
+            print(x)
+            assert state.shape[0] == 1 # batch size
+            assert state.shape[1] == self.convtr.convtr.out_channels
+            assert state.shape[2] == self._kernel_size - self._stride
+            PT = state.shape[2]
+
+            y = self.convtr(x)
+            # This doesn't compile with coremltools
+            #y[..., :PT] += state
+            z = torch.zeros((1, self.convtr.convtr.out_channels, y.shape[-1] - PT))
+            z = torch.cat((state, z), dim = 2)
+            y += z
+
+            for_partial = y[..., -PT:]
+            bias = self.convtr.convtr.bias
+            if bias is not None:
+                for_partial -= bias[:,None]
+            new_state = for_partial
+            y = y[...,:-PT]
+            return y, [new_state]
+
+    def recurrent_n_states(self):
+        if self._kernel_size - self._stride == 0:
+            return 0
+        return 1
+
+    def recurrent_init_state(self):
+        if self._kernel_size - self._stride == 0:
+            return []
+        params = next(iter(self.parameters()))
+        return [torch.zeros(
+            1,
+            self.convtr.convtr.out_channels,
+            self._kernel_size - self._stride,
+            dtype = params.dtype,
+            device = params.device)
+        ]
 
 
 def test():

@@ -24,7 +24,7 @@ from .rope import RotaryEmbedding
 from .streaming import StreamingModule, StreamingContainer, State
 from .lora import LoRALinear
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
-
+from torch.fx.experimental.symbolic_shapes import expect_true, sym_eq, guard_size_oblivious
 
 class LayerNormF32(nn.LayerNorm):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -573,6 +573,133 @@ class StreamingMultiheadAttention(StreamingModule[_MHAState]):
             state.offset_cpu += T
         return x
 
+    def recurrent_n_states(self):
+        return 2
+
+    def recurrent_init_state(self):
+        state = [
+            torch.tensor([0]) # State
+        ]
+        in_proj = self.in_projs[0]
+        if isinstance(in_proj, LoRALinear):
+            device = in_proj.lora_A.weight.device
+            dtype = in_proj.lora_A.weight.dtype
+        elif isinstance(in_proj, nn.Linear):
+            device = in_proj.weight.device
+            dtype = in_proj.weight.dtype
+        elif isinstance(in_proj, quantize.QLinear):
+            device = in_proj.weight.device
+            dtype = torch.float16
+        if self.context is None:
+            capacity = self.weights_per_step
+        else:
+            capacity = self.context
+        dim_per_head = self.embed_dim // self.num_heads
+
+        state.append(torch.zeros(
+            (2, 1, self.num_heads, capacity, dim_per_head),
+            device=device,
+            dtype=dtype,
+        ))
+        return state
+    
+    def recurrent_forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, state: list[torch.Tensor]):
+        B, T = query.shape[:2]
+        assert B == 1
+
+        print("len(state)", state[1].shape)
+        offset = state[0]
+        k_store = state[1][0]
+        v_store = state[1][1]
+        # Yes, as it is currently we lose all the context every 100 tokens (~10s)
+        # We need to actually make it a ring
+        offset %= k_store.shape[2]
+        print("state pre", state[0])
+        # Help dynamo
+        if isinstance(T, torch.Tensor):
+            print("bip bip")
+            torch._check_is_size(T.item())
+            torch._check_is_size(offset.size(0).item())
+
+        if self.cross_attention:
+            assert len(self.in_projs) == 1
+            in_proj = self.in_projs[0]
+            assert in_proj.bias is None
+            assert isinstance(in_proj, nn.Linear)
+            dim = in_proj.weight.shape[0] // 3
+            q = nn.functional.linear(query, in_proj.weight[:dim])
+            q = rearrange(q, "b t (h d) -> b h t d", h=self.num_heads)
+            k, v = self._get_cross_attention(key, value)
+        else:
+            projected = apply_weights_per_step(
+                self.in_projs, self.weights_per_step_schedule, query, offset)
+
+            q, k, v = rearrange(
+                projected, "b t (p h d) -> p b h t d", p=3, h=self.num_heads
+            )
+        if self.rope:
+            q, k = self.rope(q, k, offset, time_before_heads=False)
+
+        #k, v, pos_k = self._complete_kv(k, v)
+        #prev_k = state[1][0][:,:,:offset,:]
+        #prev_v = state[1][1][:,:,:offset,:]
+        #k = torch.cat((prev_k, k), dim = -2)
+        #v = torch.cat((prev_v, v), dim = -2)
+        a = offset[0]
+        b = offset[0] + query.size(-2)
+        #print("D", b > k_store.shape[2])
+        #r = torch.where(b > k_store.shape[2], torch.cat([torch.tensor(0), query.size(-2)]), torch.tensor([a,b]))
+        print("A", offset[0], "T", T, "sum", offset[0] + T)
+        if isinstance(T, torch.Tensor):
+            torch._check_is_size(a.item())
+            torch._check_is_size(b.item())
+            if b < a:
+                return None
+        #update_pos = torch.arange(a, b, device = key.device, dtype = torch.int)
+        print("k_store", k_store.shape, "k", k.shape)
+        #print("update_pos",update_pos)
+        #print(update_pos.dtype)
+        #k_cache.index_copy_(2, update_pos, k)
+        k_store[:,:,a:b,:] = k
+        v_store[:,:,a:b,:] = v
+
+        #pos_k = torch.arange(offset[0] + T, device = key.device, dtype = torch.int)
+        #pos_k = torch.arange(offset[0] + T, device = key.device, dtype = torch.int)
+        pos_k = torch.arange(k_store.shape[2], device = key.device, dtype = torch.int)
+        pos_k_filter = pos_k < (offset[0] + T)
+        pos_k = torch.where(pos_k_filter, pos_k, 0)
+        print(pos_k)
+
+        pos_k = pos_k.unsqueeze(0) # Batch_size
+
+        pos_k = pos_k[:, None]
+        print("pos_k", pos_k.shape)
+        #if pos_k.shape[2] != 2:
+        #    return None
+        if self.causal:
+            pos_q = offset.view(-1, 1, 1) + torch.arange(T, device=q.device, dtype=torch.long).view(
+                -1, 1)
+            delta = pos_q - pos_k
+            attn_bias = (pos_k >= 0) & (delta >= 0)
+            if self.context is not None:
+                attn_bias = attn_bias & (delta < self.context)
+            attn_bias = attn_bias[:, None]
+        else:
+            attn_bias = None
+        print("Q", q.shape, "K", k_store.shape, "V", v_store.shape, "attn_bias", attn_bias.shape)
+        x = F.scaled_dot_product_attention(q, k_store, v_store, attn_bias, dropout_p=0.0)
+
+        x = rearrange(x, "b h t d -> b t (h d)")
+        x = apply_weights_per_step(
+            self.out_projs, self.weights_per_step_schedule, x, offset)
+
+        state = [
+            b.view((1)),
+            torch.cat( (k_store.unsqueeze(0), v_store.unsqueeze(0)), dim = 0)
+        ]
+        print("state post", state[0])
+        return x, state
+
 
 @dataclass
 class _LayerState(State):
@@ -786,6 +913,31 @@ class StreamingTransformerLayer(StreamingModule[_LayerState]):
                 state.offset_cpu += x.shape[1]
             return x
 
+    def recurrent_n_states(self):
+        total = 0
+        total += self.self_attn.recurrent_n_states()
+        return total
+
+    def recurrent_init_state(self):
+        total = []
+        total += self.self_attn.recurrent_init_state()
+        return total
+
+    def recurrent_forward(self, x: torch.Tensor, state: list[torch.Tensor]):
+        new_state = []
+        if not self.skip_self_attn:
+            x_orig = x
+            x = self.norm1_(x)
+            a = self.self_attn.recurrent_n_states()
+            update, that_state = self.self_attn.recurrent_forward(x, x, x, state = state[:a])
+            new_state += that_state
+            x = x_orig.to(update) + self.layer_scale_1(update)
+        if self.cross_attention is not None:
+            x = self._cross_attention_block(x, cross_attention_src)
+        x = self._ff_block(x)
+
+        return x, new_state
+
 
 @dataclass
 class _TransformerState(State):
@@ -913,6 +1065,59 @@ class StreamingTransformer(StreamingModule[_TransformerState]):
         return x.to(dtype_input)
 
 
+    def recurrent_n_states(self):
+        total = 0
+        total += 1 # offset
+        for layer in self.layers.children():
+            if hasattr(layer, "recurrent_n_states"):
+                total += layer.recurrent_n_states()
+        return total
+
+    def recurrent_init_state(self):
+        total = []
+        total += [torch.tensor([0])] # offset
+        for layer in self.layers.children():
+            if hasattr(layer, "recurrent_init_state"):
+                total += layer.recurrent_init_state()
+        return total
+
+
+    def recurrent_forward(self, x: torch.Tensor, state: list[torch.Tensor]):
+        B, T, C = x.shape
+        dtype_input = x.dtype
+
+        offset = state[0]
+        state = state[1:]
+
+        if self.positional_embedding in {"sin", "sin_rope"}:
+            positions = torch.arange(T, device=x.device).view(1, -1, 1)
+            positions = positions + offset.view(1, 1, 1)
+            pos_emb = create_sin_embedding(
+                positions, C, max_period=self.max_period, dtype=x.dtype
+            )
+            x = x + self.positional_scale * pos_emb
+
+        i = 0
+        new_state = [offset + T]
+        for layer in self.layers.children():
+            if hasattr(layer, "recurrent_forward"):
+                n_states = layer.recurrent_n_states()
+                this_state = state[:n_states]
+                state = state[n_states:]
+                x, that_state = layer.recurrent_forward(x, this_state)
+                print(len(that_state), len(this_state))
+                assert len(that_state) == len(this_state)
+                for i, _ in enumerate(that_state):
+                    print(that_state[i].shape, this_state[i].shape)
+                    assert that_state[i].shape == this_state[i].shape
+                new_state += that_state
+            else:
+                x = layer(x)
+
+        return x, new_state
+
+
+
 class ProjectedTransformer(StreamingContainer):
     """Transformer with optional projections of the input and output to different dimensions when needed.
     Supports multiple outputs.
@@ -965,3 +1170,24 @@ class ProjectedTransformer(StreamingContainer):
                 y = y.transpose(1, 2)
             ys.append(y)
         return ys
+
+
+    def recurrent_n_states(self):
+        return self.transformer.recurrent_n_states()
+
+    def recurrent_init_state(self):
+        return self.transformer.recurrent_init_state()
+
+    def recurrent_forward(self, x: torch.Tensor, state: list[torch.Tensor], *args, **kwargs):
+        if self.conv_layout:
+            x = x.transpose(1, 2)
+        if self.input_proj is not None:
+            x = self.input_proj(x)
+        z, new_state = self.transformer.recurrent_forward(x, state, *args, **kwargs)
+        ys = []
+        for output_proj in self.output_projs:
+            y = output_proj(z)
+            if self.conv_layout:
+                y = y.transpose(1, 2)
+            ys.append(y)
+        return ys, new_state
