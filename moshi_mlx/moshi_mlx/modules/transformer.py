@@ -165,6 +165,13 @@ class CrossAttention(nn.Module):
             self.in_proj_stride = cfg.d_model - proj_width * len(self.id_removed)
             print("changed in_proj_stride from", cfg.d_model, "to", self.in_proj_stride)
 
+    def quantize(self):
+        cfg = self.cfg
+        self.in_proj_q = nn.Linear(cfg.d_model, cfg.d_model, bias = cfg.bias_attn)
+        self.in_proj_q.weight = self.in_proj.weight[:cfg.d_model]
+        self.in_proj_q = self.in_proj_q.to_quantized(group_size = 64, bits = 4)
+        self.out_proj = self.out_proj.to_quantized(group_size = 64, bits = 4)
+
 
     def __call__(
         self,
@@ -172,26 +179,6 @@ class CrossAttention(nn.Module):
         cross_attention_src: mx.array,
         cache: LayerCache,
     ) -> mx.array:
-        start = time.time()
-        a = self.call__(xs, cross_attention_src, cache)
-        if self.patched_outproj:
-            cross_times[self.n_self] += time.time() - start
-        #print("Cross total")
-        #for k in [x[0] for x in sorted(cross_times.items(), key = lambda x: x[1])]:
-        #    print(f" - {k}: {cross_times[k]}")
-        return a
-
-    @eval_mx_arrays
-    def call__(
-        self,
-        xs: mx.array,
-        cross_attention_src: mx.array,
-        cache: LayerCache,
-    ) -> mx.array:
-        if not self.patched_outproj:
-            self.patched_outproj = True
-            self.out_proj = modify_linear_layer(self.out_proj, self.drop_oproj)
-            self.in_proj = modify_linear_layer(self.in_proj, self.drop_iproj, input_side = False)
         # TODO: Add some cross-attention kv caching.
         assert self.cfg.kv_repeat == 1, "only kv_repeat==1 is supported"
         startts = time.time()
@@ -200,7 +187,8 @@ class CrossAttention(nn.Module):
         b, t, hd = xs.shape
         qkv_w = self.in_proj.weight
         #print("BABA", xs.shape, qkv_w[:self.in_proj_stride].T.shape)
-        q = xs @ qkv_w[:self.in_proj_stride].T
+        #q = xs @ qkv_w[:self.in_proj_stride].T
+        q = self.in_proj_q(xs)
         q = q.reshape(b, t, len(self.keep), self.cfg.head_dim).swapaxes(1, 2)
         #print("ZB", time.time() - startts)
 
@@ -314,22 +302,6 @@ class Attention(nn.Module):
         self.in_proj_heads = len(self.keep)
 
     def __call__(
-        self,
-        xs: mx.array,
-        cache: KVCache | RotatingKVCache,
-        mask: mx.array | None = None,
-    ) -> mx.array:
-        start = time.time()
-        a = self.call__(xs, cache, mask)
-        if self.patched_outproj:
-            attn_times[self.n_self] += time.time() - start
-        #print("Attention total")
-        #for k in [x[0] for x in sorted(attn_times.items(), key = lambda x: x[1])]:
-        #    print(f" - {k}: {attn_times[k]}")
-        return a
-
-    @eval_mx_arrays
-    def call__(
         self,
         xs: mx.array,
         cache: KVCache | RotatingKVCache,
