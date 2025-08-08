@@ -8,7 +8,6 @@ use crate::AsrStreamingQuery as Query;
 use anyhow::{Context, Result};
 use axum::extract::ws;
 use candle::{DType, Device, Tensor};
-use candle_nn::VarBuilder;
 use std::collections::{BinaryHeap, VecDeque};
 use std::sync::{Arc, Mutex};
 use tokio::task;
@@ -450,14 +449,10 @@ impl BatchedAsr {
         config: &crate::Config,
         dev: &Device,
     ) -> Result<Self> {
+        tracing::info!("Loading batched asr model");
         let dtype = dev.bf16_default_to_f32();
-        let vb_lm =
-            unsafe { VarBuilder::from_mmaped_safetensors(&[&asr.lm_model_file], dtype, dev)? };
-        let lm = moshi::lm::LmModel::batched(
-            batch_size,
-            &asr.model,
-            moshi::nn::MaybeQuantizedVarBuilder::Real(vb_lm),
-        )?;
+        let lm =
+            moshi::lm::load_lm_model_batched(&asr.model, &asr.lm_model_file, dtype, dev, batch_size)?;
         let audio_tokenizer = {
             let vb = unsafe {
                 candle_nn::VarBuilder::from_mmaped_safetensors(

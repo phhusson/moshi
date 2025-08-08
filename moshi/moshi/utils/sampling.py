@@ -83,6 +83,7 @@ def sample_top_p(probs: torch.Tensor, p: float) -> torch.Tensor:
     return next_token
 
 
+@torch.compiler.disable
 def sample_token(
     logits: torch.Tensor,
     use_sampling: bool = False,

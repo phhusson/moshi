@@ -56,7 +56,7 @@ class ConvDownsample1d(nn.Module):
             actual_conv.weight.data.fill_(1.0 / (2 * stride))
 
     def forward(self, x: torch.Tensor):
-        batch_size = len(x)
+        batch_size = x.shape[0]
         if not self.learnt:
             x = rearrange(x, "b c t -> (b c) () t")
         y = self.conv(x)
@@ -107,7 +107,7 @@ class ConvTrUpsample1d(nn.Module):
             actual_convtr.weight.data.fill_(1.0)
 
     def forward(self, x: torch.Tensor):
-        batch_size = len(x)
+        batch_size = x.shape[0]
         if not self.learnt:
             x = rearrange(x, "b c t -> (b c) () t")
         y = self.convtr(x)

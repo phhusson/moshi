@@ -330,6 +330,10 @@ class Lm(nn.Module):
         else:
             self.condition_provider = None
 
+    def reset_state(self):
+        for c in self.transformer_cache:
+            c.reset()
+
     def load_pytorch_weights(
         self,
         file: str,

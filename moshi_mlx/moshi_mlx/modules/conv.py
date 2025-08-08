@@ -36,6 +36,7 @@ class Conv1d(nn.Module):
         self._dilation = dilation
 
     def __call__(self, xs: mx.array) -> mx.array:
+        #print("stride", self._stride, "padding", self._padding, "dilation", self._dilation, "groups", self._groups)
         # MLX uses NLC whereas pytorch/candle use NCL
         y = mx.conv1d(
             xs.swapaxes(-1, -2),
@@ -111,6 +112,8 @@ class ConvTranspose1d(nn.Module):
         return self
 
     def __call__(self, xs: mx.array) -> mx.array:
+        s = self._expanded_weight.shape
+        #print("heya transpose conv", s)
         y = mx.conv_transpose1d(
             xs.swapaxes(-1, -2),
             self._expanded_weight,

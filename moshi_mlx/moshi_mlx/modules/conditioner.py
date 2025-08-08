@@ -74,7 +74,7 @@ class ConditionAttributes:
 def create_sin_embedding(
     positions: mx.array,
     dim: int,
-    max_period: float = 10000,
+    max_period: float = 10000.0,
     dtype: mx.Dtype = mx.float32,
     ) -> mx.array:
     """Create sinusoidal positional embedding, with shape `[B, T, C]`.

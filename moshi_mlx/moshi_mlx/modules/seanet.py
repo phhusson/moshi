@@ -7,7 +7,10 @@ from .conv import StreamableConv1d, StreamableConvTranspose1d
 
 import mlx.core as mx
 import mlx.nn as nn
+import numpy as np
+import coremltools as ct
 
+print("KIkooooo")
 
 @dataclass
 class SeanetConfig:
@@ -161,6 +164,15 @@ class EncoderLayer(nn.Module):
 class SeanetEncoder(nn.Module):
     def __init__(self, cfg: SeanetConfig):
         super().__init__()
+        print("seanet encoder!!!!!")
+        #self.mlcore_model = ct.models.MLModel("/Users/phh/moshi/mimi-seanet-encoder.mlpackage", compute_units=ct.ComputeUnit.CPU_AND_NE)
+        #self.mlcore_state = {}
+        #for in_descr in self.mlcore_model.input_description._fd_spec:
+        #    if not in_descr.name.startswith("state_"):
+        #        continue
+        #    shape = in_descr.type.multiArrayType.shape
+        #    self.mlcore_state[in_descr.name] = np.zeros(tuple(shape))
+
         mult = 1
         self.init_conv1d = StreamableConv1d(
             in_channels=cfg.channels,
@@ -204,11 +216,31 @@ class SeanetEncoder(nn.Module):
         return self.final_conv1d(xs)
 
     def step(self, xs: mx.array) -> mx.array:
-        xs = self.init_conv1d.step(xs)
+        #print("Stepping encoder array size")
+        # Yes we store x in "state", meh
+        #if True:
+        #    self.mlcore_state['x'] = np.array(xs)
+        #    ym = self.mlcore_model.predict(self.mlcore_state)
+
+        #    #keys = sorted(list(ym.keys()))
+        #    #print("mlcore result", keys)
+        #    #for i in keys:
+        #    #    print(i, ym[i].shape)
+
+        #    for i in range(10):
+        #        j = str(i)
+        #        self.mlcore_state['state_'+j] = ym['out_state_'+j]
+        #    ym = ym['y']
+        #    return mx.array(ym)
+
+
+        xs = self.init_conv1d.step(mx.array(xs))
         for layer in self.layers:
             xs = layer.step(xs)
         xs = nn.elu(xs, alpha=1.0)
-        return self.final_conv1d.step(xs)
+        ys = self.final_conv1d.step(xs)
+        return ys
+
 
 
 class DecoderLayer(nn.Module):
@@ -256,6 +288,7 @@ class DecoderLayer(nn.Module):
 class SeanetDecoder(nn.Module):
     def __init__(self, cfg: SeanetConfig):
         super().__init__()
+        print("seanet decoder!!!!!")
         mult = 1 << len(cfg.ratios)
         self.init_conv1d = StreamableConv1d(
             in_channels=cfg.dimension,
@@ -309,5 +342,6 @@ class SeanetDecoder(nn.Module):
 class Seanet(nn.Module):
     def __init__(self, cfg: SeanetConfig):
         super().__init__()
+        print("Instantiating Seanet")
         self.encoder = SeanetEncoder(cfg)
         self.decoder = SeanetDecoder(cfg)

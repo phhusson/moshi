@@ -1014,10 +1014,12 @@ pub fn load_lm_model<P: AsRef<std::path::Path>>(
 ) -> Result<LmModel> {
     let quantized = model_file.as_ref().extension().is_some_and(|v| v == "gguf");
     let vb = if quantized {
+        tracing::info!("Got a gguf");
         MaybeQuantizedVarBuilder::Quantized(
             candle_transformers::quantized_var_builder::VarBuilder::from_gguf(model_file, dev)?,
         )
     } else {
+        tracing::info!("Not a gguf");
         unsafe {
             MaybeQuantizedVarBuilder::Real(candle_nn::VarBuilder::from_mmaped_safetensors(
                 &[model_file],
@@ -1027,6 +1029,33 @@ pub fn load_lm_model<P: AsRef<std::path::Path>>(
         }
     };
     let model = LmModel::new(&cfg, vb)?;
+    Ok(model)
+}
+
+pub fn load_lm_model_batched<P: AsRef<std::path::Path>>(
+    cfg: &Config,
+    model_file: P,
+    dtype: DType,
+    dev: &Device,
+    batch_size: usize,
+) -> Result<LmModel> {
+    let quantized = model_file.as_ref().extension().is_some_and(|v| v == "gguf");
+    let vb = if quantized {
+        tracing::info!("Got a gguf");
+        MaybeQuantizedVarBuilder::Quantized(
+            candle_transformers::quantized_var_builder::VarBuilder::from_gguf(model_file, dev)?,
+        )
+    } else {
+        tracing::info!("Not a gguf");
+        unsafe {
+            MaybeQuantizedVarBuilder::Real(candle_nn::VarBuilder::from_mmaped_safetensors(
+                &[model_file],
+                dtype,
+                dev,
+            )?)
+        }
+    };
+    let model = LmModel::batched(batch_size, &cfg, vb)?;
     Ok(model)
 }
 

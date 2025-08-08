@@ -2,7 +2,7 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-from .conv import Conv1d
+from .conv import Conv1d, ConvTranspose1d
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -128,6 +128,7 @@ class ResidualVectorQuantizer(nn.Module):
 
     def encode(self, xs: mx.array) -> mx.array:
         if self.input_proj is not None:
+            #print("input_proj dim", self.input_proj.weight.shape)
             xs = self.input_proj(xs)
         return self.vq.encode(xs).swapaxes(0, 1)
 
@@ -135,6 +136,7 @@ class ResidualVectorQuantizer(nn.Module):
         xs = xs.swapaxes(0, 1)
         quantized = self.vq.decode(xs)
         if self.output_proj is not None:
+            #print("output_proj dim", self.input_proj.weight.shape)
             quantized = self.output_proj(quantized)
         return quantized
 
