@@ -27,7 +27,6 @@ from ..modules.conditioner import (
 from .mimi import Mimi
 from ..utils.loaders import hf_get
 from ..utils.sampling import Sampler
-from ..modules.eval import eval_mx_arrays
 
 
 DEFAULT_DSM_TTS_REPO = 'kyutai/tts-1.6b-en_fr'
@@ -112,7 +111,6 @@ class State:
         return []
 
 
-@eval_mx_arrays
 def _delayed(codes: mx.array, delays: list[int], fill_value: int) -> mx.array:
     # Apply the acoustic delay on the provided audio tokens.
     K, T = codes.shape
