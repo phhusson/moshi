@@ -14,7 +14,6 @@ from ..modules.conditioner import (
     TensorConditionerConfig,
 )
 from ..modules.transformer import LayerCache, Transformer, TransformerConfig
-from ..modules.eval import eval_mx_arrays
 from ..utils import sampling
 
 
@@ -183,7 +182,6 @@ class ScaledEmbedding(nn.Embedding):
             self.out1 = nn.Linear(low_rank or embedding_dim, embedding_dim, bias=False)
             self.out2 = nn.Linear(low_rank or embedding_dim, embedding_dim, bias=False)
 
-    @eval_mx_arrays
     def __call__(self, input: mx.array) -> mx.array:
         is_zero = input == self.zero_idx
         zero = mx.zeros(1, dtype=input.dtype)
@@ -252,7 +250,6 @@ class DepFormer(nn.Module):
     def __call__(self, _: mx.array) -> mx.array:
         raise ValueError("not implemented")
 
-    @eval_mx_arrays
     def sample(
         self,
         main_transformer_out: mx.array,
@@ -333,6 +330,10 @@ class Lm(nn.Module):
         else:
             self.condition_provider = None
 
+    def reset_state(self):
+        for c in self.transformer_cache:
+            c.reset()
+
     def load_pytorch_weights(
         self,
         file: str,
@@ -409,7 +410,6 @@ class Lm(nn.Module):
     def delays(self) -> list[int]:
         return self.cfg.audio_delays
 
-    @eval_mx_arrays
     def forward_text(
         self,
         token_ids: mx.array,
@@ -422,7 +422,6 @@ class Lm(nn.Module):
         text_logits = self.text_linear(transformer_out)
         return (transformer_out, text_logits)
 
-    @eval_mx_arrays
     def __call__(
         self,
         token_ids: mx.array,
@@ -435,7 +434,6 @@ class Lm(nn.Module):
         text_logits = self.text_linear(transformer_out)
         return text_logits
 
-    @eval_mx_arrays
     def _sample(
         self,
         text_token_ids: mx.array,
@@ -485,7 +483,6 @@ class Lm(nn.Module):
             audio_tokens = None
         return text_token, audio_tokens, transformer_out
 
-    @eval_mx_arrays
     def sample(
         self,
         text_token_ids: mx.array,
@@ -510,7 +507,6 @@ class Lm(nn.Module):
             on_audio_hook)
         return text, audio
 
-    @eval_mx_arrays
     def warmup(self, ct: ConditionTensor | None = None):
         text, audio = self.sample(
             mx.array([[self.cfg.text_out_vocab_size]]),

@@ -5,7 +5,6 @@
 from dataclasses import dataclass
 
 from .kv_cache import KVCache, RotatingKVCache
-from .eval import eval_mx_arrays
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -46,7 +45,6 @@ class Id(nn.Module):
     def __init__(self):
         super().__init__()
 
-    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         return xs
 
@@ -57,7 +55,6 @@ class LayerScale(nn.Module):
 
         self.scale = mx.ones(dim)
 
-    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         return xs * self.scale
 
@@ -72,7 +69,6 @@ class LayerCache:
         self.cross_attn = None
 
 
-@eval_mx_arrays
 def modify_linear_layer(layer: nn.Linear, column_to_remove: list[int], input_side: bool = True, quantization = None):
     if isinstance(layer, nn.layers.quantized.QuantizedLinear):
         return layer
@@ -375,7 +371,6 @@ class MlpGating(nn.Module):
         self.linear_in = nn.Linear(cfg.d_model, 2 * hidden, bias=cfg.bias_ff)
         self.linear_out = nn.Linear(hidden, cfg.d_model, bias=cfg.bias_ff)
 
-    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         xs = self.linear_in(xs)
         b, t, _ = xs.shape
@@ -390,7 +385,6 @@ class MlpNoGating(nn.Module):
         self.linear1 = nn.Linear(cfg.d_model, cfg.dim_feedforward, bias=cfg.bias_ff)
         self.linear2 = nn.Linear(cfg.dim_feedforward, cfg.d_model, bias=cfg.bias_ff)
 
-    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         return self.linear2(nn.gelu_approx(self.linear1(xs)))
 
@@ -431,7 +425,6 @@ class TransformerLayer(nn.Module):
         else:
             self.cross_attention = None
 
-    @eval_mx_arrays
     def _cross_attention_block(
         self,
         x: mx.array,
@@ -444,22 +437,18 @@ class TransformerLayer(nn.Module):
         update = self.cross_attention(x, cross_attention_src, cache)
         return x_orig + update
 
-    @eval_mx_arrays
     def norm1_(self, x):
         x = self.norm1(x)
         return x
 
-    @eval_mx_arrays
     def layer_scale_1_(self, x):
         x = self.layer_scale_1(x)
         return x
 
-    @eval_mx_arrays
     def layer_scale_2_(self, x):
         x = self.layer_scale_2(x)
         return x
 
-    @eval_mx_arrays
     def __call__(
         self,
         xs: mx.array,
@@ -485,7 +474,6 @@ class Transformer(nn.Module):
         self.cfg = cfg
         self.layers = [TransformerLayer(cfg=cfg) for _ in range(cfg.num_layers)]
 
-    @eval_mx_arrays
     def __call__(
         self,
         xs: mx.array,
@@ -544,7 +532,6 @@ class ProjectedTransformer(nn.Module):
             output_projs.append(p)
         self.output_projs = output_projs
 
-    @eval_mx_arrays
     def __call__(
         self,
         xs: mx.array,

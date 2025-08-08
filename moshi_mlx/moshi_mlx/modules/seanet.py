@@ -4,13 +4,13 @@
 
 from dataclasses import dataclass
 from .conv import StreamableConv1d, StreamableConvTranspose1d
-from .eval import eval_mx_arrays
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 import coremltools as ct
 
+print("KIkooooo")
 
 @dataclass
 class SeanetConfig:
@@ -35,7 +35,6 @@ class StreamingAdd(nn.Module):
         self._lhs = None
         self._rhs = None
 
-    @eval_mx_arrays
     def step(self, lhs: mx.array, rhs: mx.array) -> mx.array:
         if self._lhs is not None:
             lhs = mx.concat([self._lhs, lhs], axis=-1)
@@ -99,7 +98,6 @@ class SeanetResnetBlock(nn.Module):
         for b in self.block:
             b.reset_state()
 
-    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         residual = xs
         for b in self.block:
@@ -110,7 +108,6 @@ class SeanetResnetBlock(nn.Module):
             xs = xs + self.shortcut(residual)
         return xs
 
-    @eval_mx_arrays
     def step(self, xs: mx.array) -> mx.array:
         residual = xs
         for b in self.block:
@@ -153,13 +150,11 @@ class EncoderLayer(nn.Module):
         for r in self.residuals:
             r.reset_state()
 
-    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         for r in self.residuals:
             xs = r(xs)
         return self.downsample(nn.elu(xs, alpha=1.0))
 
-    @eval_mx_arrays
     def step(self, xs: mx.array) -> mx.array:
         for r in self.residuals:
             xs = r.step(xs)
@@ -213,7 +208,6 @@ class SeanetEncoder(nn.Module):
         for layer in self.layers:
             layer.reset_state()
 
-    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         xs = self.init_conv1d(xs)
         for layer in self.layers:
@@ -278,14 +272,12 @@ class DecoderLayer(nn.Module):
         for r in self.residuals:
             r.reset_state()
 
-    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         xs = self.upsample(nn.elu(xs, alpha=1.0))
         for r in self.residuals:
             xs = r(xs)
         return xs
 
-    @eval_mx_arrays
     def step(self, xs: mx.array) -> mx.array:
         xs = self.upsample.step(nn.elu(xs, alpha=1.0))
         for r in self.residuals:
@@ -296,6 +288,7 @@ class DecoderLayer(nn.Module):
 class SeanetDecoder(nn.Module):
     def __init__(self, cfg: SeanetConfig):
         super().__init__()
+        print("seanet decoder!!!!!")
         mult = 1 << len(cfg.ratios)
         self.init_conv1d = StreamableConv1d(
             in_channels=cfg.dimension,
@@ -331,7 +324,6 @@ class SeanetDecoder(nn.Module):
         for layer in self.layers:
             layer.reset_state()
 
-    @eval_mx_arrays
     def __call__(self, xs: mx.array) -> mx.array:
         xs = self.init_conv1d(xs)
         for layer in self.layers:
@@ -339,7 +331,6 @@ class SeanetDecoder(nn.Module):
         xs = nn.elu(xs, alpha=1.0)
         return self.final_conv1d(xs)
 
-    @eval_mx_arrays
     def step(self, xs: mx.array) -> mx.array:
         xs = self.init_conv1d.step(xs)
         for layer in self.layers:
@@ -351,5 +342,6 @@ class SeanetDecoder(nn.Module):
 class Seanet(nn.Module):
     def __init__(self, cfg: SeanetConfig):
         super().__init__()
+        print("Instantiating Seanet")
         self.encoder = SeanetEncoder(cfg)
         self.decoder = SeanetDecoder(cfg)

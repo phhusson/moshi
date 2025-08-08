@@ -15,7 +15,6 @@ from ..modules import (
     ConvDownsample1d,
     ConvTrUpsample1d,
 )
-from ..modules.eval import eval_mx_arrays
 import math
 import coremltools as ct
 import numpy as np
@@ -92,6 +91,7 @@ def mimi_202407(num_codebooks: int) -> MimiConfig:
 class Mimi(nn.Module):
     def __init__(self, cfg: MimiConfig):
         super().__init__()
+        print("hello init mimi")
         dim = cfg.seanet.dimension
         self.cfg = cfg
         encoder_frame_rate = cfg.sample_rate / math.prod(cfg.seanet.ratios)
@@ -163,7 +163,6 @@ class Mimi(nn.Module):
         for c in self.encoder_cache:
             c.reset()
 
-    @eval_mx_arrays
     def encode(self, xs: mx.array) -> mx.array:
         self.encoder.reset_state()
         for c in self.encoder_cache:
@@ -173,7 +172,6 @@ class Mimi(nn.Module):
         xs = self.downsample(xs)
         return self.quantizer.encode(xs)
 
-    @eval_mx_arrays
     def decode(self, xs: mx.array) -> mx.array:
         self.decoder.reset_state()
         for c in self.decoder_cache:
@@ -183,7 +181,6 @@ class Mimi(nn.Module):
         xs = self.decoder_transformer(xs, cache=self.decoder_cache)[0]
         return self.decoder(xs)
 
-    @eval_mx_arrays
     def encode_step(self, xs: mx.array) -> mx.array:
         if True:
             self.mlcore_encoder_state['x'] = np.array(xs)
@@ -206,7 +203,6 @@ class Mimi(nn.Module):
         xs = self.quantizer.encode(xs)
         return xs
 
-    @eval_mx_arrays
     def decode_step(self, xs: mx.array) -> mx.array:
         if True:
             #for in_descr in self.mlcore_decoder_model.input_description._fd_spec:
@@ -236,7 +232,6 @@ class Mimi(nn.Module):
         xs = self.decoder.step(xs)
         return xs
 
-    @eval_mx_arrays
     def warmup(self):
         pcm = mx.zeros((1, 1, 1920 * 4))
         codes = self.encode(pcm)

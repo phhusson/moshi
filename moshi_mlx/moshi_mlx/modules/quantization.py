@@ -3,7 +3,6 @@
 # LICENSE file in the root directory of this source tree.
 
 from .conv import Conv1d, ConvTranspose1d
-from .eval import eval_mx_arrays
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -21,26 +20,22 @@ class EuclideanCodebook(nn.Module):
         self._embedding = self.embedding_sum / cluster_usage
         self._c2 = self._embedding.square().sum(axis=-1) / 2
 
-    @eval_mx_arrays
     def update_in_place(self):
         cluster_usage = mx.maximum(self.cluster_usage, self._epsilon)[:, None]
         self._embedding = self.embedding_sum / cluster_usage
         self._c2 = self._embedding.square().sum(axis=-1) / 2
 
-    @eval_mx_arrays
     def update(self, parameters: dict) -> nn.Module:
         super().update(parameters)
         self.update_in_place()
         return self
 
-    @eval_mx_arrays
     def encode(self, xs: mx.array) -> mx.array:
         target_shape = xs.shape[:-1]
         xs = xs.flatten(end_axis=-2)
         dot_prod = xs @ self._embedding.swapaxes(-1, -2)
         return (self._c2 - dot_prod).argmin(axis=-1).reshape(target_shape)
 
-    @eval_mx_arrays
     def decode(self, xs: mx.array) -> mx.array:
         target_shape = list(xs.shape) + [self._dim]
         res = mx.take(self._embedding, xs.flatten(), axis=0).reshape(target_shape)
@@ -59,14 +54,12 @@ class VectorQuantization(nn.Module):
             self.project_out = nn.Linear(codebook_dim, dim)
         self.codebook = EuclideanCodebook(dim=codebook_dim, codebook_size=codebook_size)
 
-    @eval_mx_arrays
     def encode(self, xs: mx.array) -> mx.array:
         xs = xs.swapaxes(-1, -2)
         if self.project_in is not None:
             xs = self.project_in(xs)
         return self.codebook.encode(xs)
 
-    @eval_mx_arrays
     def decode(self, xs: mx.array) -> mx.array:
         xs = self.codebook.decode(xs)
         if self.project_out is not None:
@@ -87,7 +80,6 @@ class ResidualVectorQuantization(nn.Module):
             layers.append(vq)
         self.layers = layers
 
-    @eval_mx_arrays
     def encode(self, xs: mx.array) -> mx.array:
         codes = []
         residual = xs
@@ -98,7 +90,6 @@ class ResidualVectorQuantization(nn.Module):
             codes.append(indices)
         return mx.stack(codes, axis=0)
 
-    @eval_mx_arrays
     def decode(self, xs: mx.array) -> mx.array:
         seq_len = xs.shape[0]
         quantized = self.layers[0].decode(xs[0])
@@ -135,19 +126,17 @@ class ResidualVectorQuantizer(nn.Module):
             codebook_dim=None,
         )
 
-    @eval_mx_arrays
     def encode(self, xs: mx.array) -> mx.array:
         if self.input_proj is not None:
-            print("input_proj dim", self.input_proj.weight.shape)
+            #print("input_proj dim", self.input_proj.weight.shape)
             xs = self.input_proj(xs)
         return self.vq.encode(xs).swapaxes(0, 1)
 
-    @eval_mx_arrays
     def decode(self, xs: mx.array) -> mx.array:
         xs = xs.swapaxes(0, 1)
         quantized = self.vq.decode(xs)
         if self.output_proj is not None:
-            print("output_proj dim", self.input_proj.weight.shape)
+            #print("output_proj dim", self.input_proj.weight.shape)
             quantized = self.output_proj(quantized)
         return quantized
 
@@ -180,7 +169,6 @@ class SplitResidualVectorQuantizer(nn.Module):
             force_projection=True
         )
 
-    @eval_mx_arrays
     def encode(self, xs: mx.array) -> mx.array:
         codes = self.rvq_first.encode(xs)
         if self._nq > 1:
@@ -188,7 +176,6 @@ class SplitResidualVectorQuantizer(nn.Module):
             codes = mx.concat([codes, rest_codes], axis=1)
         return codes
 
-    @eval_mx_arrays
     def decode(self, xs: mx.array) -> mx.array:
         quantized = self.rvq_first.decode(xs[:, :1])
         if self._nq > 1:
