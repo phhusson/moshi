@@ -74,12 +74,15 @@ class LmGen:
             other_audio_tokens
         )
         audio_tokens = []
+        skip_depformer = False
         for cb_idx, delay in enumerate(self.audio_delays):
             gen_idx = self.step_idx - 1 - delay
             if gen_idx >= 0:
                 audio_token = self.gen_sequence[:, cb_idx + 1, gen_idx][None]
             else:
                 audio_token = mx.array([[self.audio_padding_token]])
+                skip_depformer = True
+                print("skip_depformer")
             if (audio_token == self.ungenerated_token).any():  # type: ignore
                 raise ValueError(
                     f"ungenerated value in audio tokens cb: {cb_idx} step: {self.step_idx}"
@@ -99,6 +102,7 @@ class LmGen:
             cfg_coef=self.cfg_coef,
             on_text_hook=self.on_text_hook,
             on_audio_hook=self.on_audio_hook,
+            skip_depformer=skip_depformer,
         )
         assert text_tokens.shape == (1,), "invalid output text-token shape"
         assert audio_tokens is None or audio_tokens.shape == (

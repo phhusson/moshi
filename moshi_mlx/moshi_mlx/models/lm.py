@@ -445,6 +445,7 @@ class Lm(nn.Module):
         cfg_coef: float = 1.0,
         on_text_hook=None,
         on_audio_hook=None,
+        skip_depformer: bool = False,
     ) -> tuple[mx.array, mx.array | None, mx.array]:
         xs = self.text_emb(text_token_ids)
         for token_ids, emb in zip(audio_token_ids, self.audio_embs):
@@ -470,15 +471,19 @@ class Lm(nn.Module):
         if on_text_hook is not None:
             on_text_hook(text_token)
         if len(self.depformer.slices) > 0:
-            audio_tokens = self.depformer.sample(
-                transformer_out,
-                audio_sampler,
-                text_token,
-                self.depformer_cache,
-                cfg_coef=cfg_coef,
-            )
-            if on_audio_hook is not None:
-                on_audio_hook(audio_tokens)
+            if skip_depformer:
+                audio_tokens = mx.array([-1])
+                audio_tokens = mx.array([-1] * 32)
+            else:
+                audio_tokens = self.depformer.sample(
+                    transformer_out,
+                    audio_sampler,
+                    text_token,
+                    self.depformer_cache,
+                    cfg_coef=cfg_coef,
+                )
+                if on_audio_hook is not None:
+                    on_audio_hook(audio_tokens)
         else:
             audio_tokens = None
         return text_token, audio_tokens, transformer_out
@@ -494,6 +499,7 @@ class Lm(nn.Module):
         cfg_coef: float = 1.0,
         on_text_hook=None,
         on_audio_hook=None,
+        skip_depformer: bool = False,
     ) -> tuple[mx.array, mx.array | None]:
         text, audio, _ = self._sample(
             text_token_ids,
@@ -504,7 +510,9 @@ class Lm(nn.Module):
             cross_attention_src,
             cfg_coef,
             on_text_hook,
-            on_audio_hook)
+            on_audio_hook,
+            skip_depformer = skip_depformer,
+            )
         return text, audio
 
     def warmup(self, ct: ConditionTensor | None = None):
