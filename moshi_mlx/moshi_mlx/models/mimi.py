@@ -128,40 +128,29 @@ class Mimi(nn.Module):
         self.encoder_cache = self.encoder_transformer.make_cache()
         self.decoder_cache = self.decoder_transformer.make_cache()
 
-        self.mlcore_encoder_model = ct.models.MLModel("/Users/phh/moshi/mimi-encoder.mlpackage", compute_units=ct.ComputeUnit.CPU_AND_NE)
-        self.mlcore_encoder_state = {}
-        for in_descr in self.mlcore_encoder_model.input_description._fd_spec:
-            if not in_descr.name.startswith("state_"):
-                continue
-            shape = in_descr.type.multiArrayType.shape
-            self.mlcore_encoder_state[in_descr.name] = np.zeros(tuple(shape))
-
-        self.mlcore_decoder_model = ct.models.MLModel("/Users/phh/moshi/mimi-decoder.mlpackage", compute_units=ct.ComputeUnit.CPU_AND_NE)
-        self.mlcore_decoder_state = {}
-        for in_descr in self.mlcore_decoder_model.input_description._fd_spec:
-            if not in_descr.name.startswith("state_"):
-                continue
-            shape = in_descr.type.multiArrayType.shape
-            self.mlcore_decoder_state[in_descr.name] = np.zeros(tuple(shape))
+        self.mlcore_encoder_model = None
+        self.mlcore_decoder_model = None
 
     def reset_state(self):
-        for in_descr in self.mlcore_encoder_model.input_description._fd_spec:
-            if not in_descr.name.startswith("state_"):
-                continue
-            shape = in_descr.type.multiArrayType.shape
-            self.mlcore_encoder_state[in_descr.name] = np.zeros(tuple(shape))
-        for in_descr in self.mlcore_decoder_model.input_description._fd_spec:
-            if not in_descr.name.startswith("state_"):
-                continue
-            shape = in_descr.type.multiArrayType.shape
-            self.mlcore_decoder_state[in_descr.name] = np.zeros(tuple(shape))
+        if self.mlcore_encoder_model:
+            for in_descr in self.mlcore_encoder_model.input_description._fd_spec:
+                if not in_descr.name.startswith("state_"):
+                    continue
+                shape = in_descr.type.multiArrayType.shape
+                self.mlcore_encoder_state[in_descr.name] = np.zeros(tuple(shape))
+        if self.mlcore_decoder_model:
+            for in_descr in self.mlcore_decoder_model.input_description._fd_spec:
+                if not in_descr.name.startswith("state_"):
+                    continue
+                shape = in_descr.type.multiArrayType.shape
+                self.mlcore_decoder_state[in_descr.name] = np.zeros(tuple(shape))
 
-        self.encoder.reset_state()
-        self.decoder.reset_state()
-        for c in self.decoder_cache:
-            c.reset()
-        for c in self.encoder_cache:
-            c.reset()
+        #self.encoder.reset_state()
+        #self.decoder.reset_state()
+        #for c in self.decoder_cache:
+        #    c.reset()
+        #for c in self.encoder_cache:
+        #    c.reset()
 
     def encode(self, xs: mx.array) -> mx.array:
         self.encoder.reset_state()
@@ -182,6 +171,15 @@ class Mimi(nn.Module):
         return self.decoder(xs)
 
     def encode_step(self, xs: mx.array) -> mx.array:
+        if not self.mlcore_encoder_model:
+            print("Loading MLCore encoder")
+            self.mlcore_encoder_model = ct.models.MLModel("/Users/phh/moshi/mimi-encoder.mlpackage", compute_units=ct.ComputeUnit.CPU_AND_NE)
+            self.mlcore_encoder_state = {}
+            for in_descr in self.mlcore_encoder_model.input_description._fd_spec:
+                if not in_descr.name.startswith("state_"):
+                    continue
+                shape = in_descr.type.multiArrayType.shape
+                self.mlcore_encoder_state[in_descr.name] = np.zeros(tuple(shape))
         if True:
             self.mlcore_encoder_state['x'] = np.array(xs)
             ym = self.mlcore_encoder_model.predict(self.mlcore_encoder_state)
@@ -204,6 +202,14 @@ class Mimi(nn.Module):
         return xs
 
     def decode_step(self, xs: mx.array) -> mx.array:
+        if not self.mlcore_decoder_model:
+            self.mlcore_decoder_model = ct.models.MLModel("/Users/phh/moshi/mimi-decoder.mlpackage", compute_units=ct.ComputeUnit.CPU_AND_NE)
+            self.mlcore_decoder_state = {}
+            for in_descr in self.mlcore_decoder_model.input_description._fd_spec:
+                if not in_descr.name.startswith("state_"):
+                    continue
+                shape = in_descr.type.multiArrayType.shape
+                self.mlcore_decoder_state[in_descr.name] = np.zeros(tuple(shape))
         if True:
             #for in_descr in self.mlcore_decoder_model.input_description._fd_spec:
             #    if not in_descr.name.startswith("state_"):
