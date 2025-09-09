@@ -16,8 +16,11 @@ from ..modules import (
     ConvTrUpsample1d,
 )
 import math
+import os
 import coremltools as ct
+from huggingface_hub import snapshot_download
 import numpy as np
+import shutil
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -128,6 +131,14 @@ class Mimi(nn.Module):
         self.encoder_cache = self.encoder_transformer.make_cache()
         self.decoder_cache = self.decoder_transformer.make_cache()
 
+        mlcore_orig_path = snapshot_download(repo_id = "phh/mimi-MLCore")
+        # Workaround a bug in CoreMLTools that doesn't seem to be open mlpackages using symlinks?
+        mlcore_path = os.path.expanduser('~/.cache/moshi-mlcore')
+        self.mlcore_encoder_path = mlcore_path + '/mimi-encoder.mlpackage'
+        self.mlcore_decoder_path = mlcore_path + '/mimi-decoder.mlpackage'
+        shutil.copytree(mlcore_orig_path + '/mimi-encoder.mlpackage', self.mlcore_encoder_path)
+        shutil.copytree(mlcore_orig_path + '/mimi-decoder.mlpackage', self.mlcore_decoder_path)
+
         self.mlcore_encoder_model = None
         self.mlcore_decoder_model = None
 
@@ -172,8 +183,7 @@ class Mimi(nn.Module):
 
     def encode_step(self, xs: mx.array) -> mx.array:
         if not self.mlcore_encoder_model:
-            print("Loading MLCore encoder")
-            self.mlcore_encoder_model = ct.models.MLModel("/Users/phh/moshi/mimi-encoder.mlpackage", compute_units=ct.ComputeUnit.CPU_AND_NE)
+            self.mlcore_encoder_model = ct.models.MLModel(self.mlcore_encoder_path, compute_units=ct.ComputeUnit.CPU_AND_NE)
             self.mlcore_encoder_state = {}
             for in_descr in self.mlcore_encoder_model.input_description._fd_spec:
                 if not in_descr.name.startswith("state_"):
@@ -203,7 +213,7 @@ class Mimi(nn.Module):
 
     def decode_step(self, xs: mx.array) -> mx.array:
         if not self.mlcore_decoder_model:
-            self.mlcore_decoder_model = ct.models.MLModel("/Users/phh/moshi/mimi-decoder.mlpackage", compute_units=ct.ComputeUnit.CPU_AND_NE)
+            self.mlcore_decoder_model = ct.models.MLModel(self.mlcore_decoder_path, compute_units=ct.ComputeUnit.CPU_AND_NE)
             self.mlcore_decoder_state = {}
             for in_descr in self.mlcore_decoder_model.input_description._fd_spec:
                 if not in_descr.name.startswith("state_"):
