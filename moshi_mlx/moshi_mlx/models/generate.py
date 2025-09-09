@@ -82,7 +82,6 @@ class LmGen:
             else:
                 audio_token = mx.array([[self.audio_padding_token]])
                 skip_depformer = True
-                print("skip_depformer")
             if (audio_token == self.ungenerated_token).any():  # type: ignore
                 raise ValueError(
                     f"ungenerated value in audio tokens cb: {cb_idx} step: {self.step_idx}"

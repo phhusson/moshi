@@ -136,6 +136,8 @@ class Mimi(nn.Module):
         mlcore_path = os.path.expanduser('~/.cache/moshi-mlcore')
         self.mlcore_encoder_path = mlcore_path + '/mimi-encoder.mlpackage'
         self.mlcore_decoder_path = mlcore_path + '/mimi-decoder.mlpackage'
+        # Racy if there are parallel instances (like if stt and tts are launched simultaneously)
+        shutil.rmtree(mlcore_path)
         shutil.copytree(mlcore_orig_path + '/mimi-encoder.mlpackage', self.mlcore_encoder_path)
         shutil.copytree(mlcore_orig_path + '/mimi-decoder.mlpackage', self.mlcore_decoder_path)
 

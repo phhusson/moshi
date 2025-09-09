@@ -254,7 +254,6 @@ class Attention(nn.Module):
         self.n_self = n_attention
         n_attention += 1
 
-        print("Attention", n_attention, cfg.num_heads)
         num_kv = cfg.num_heads // cfg.kv_repeat
         out_dim = cfg.d_model + 2 * num_kv * cfg.d_model // cfg.num_heads
         self.cfg = cfg

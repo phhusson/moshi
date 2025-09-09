@@ -16,5 +16,3 @@ from .lm import (
 )
 from .generate import LmGen
 from .mimi import mimi_202407, MimiConfig
-
-print("Hello world A")
